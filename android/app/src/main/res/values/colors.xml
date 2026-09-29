@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <color name="stellar_background">#0E121C</color>
+    <color name="stellar_key">#374054</color>
+    <color name="stellar_accent">#69A0FF</color>
+    <color name="stellar_white">#FFFFFF</color>
+    <color name="stellar_text_secondary">#B4BCCD</color>
+
+</resources>
