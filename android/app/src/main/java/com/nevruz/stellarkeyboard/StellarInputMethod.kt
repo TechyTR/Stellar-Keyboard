@@ -1,63 +1,134 @@
 package com.nevruz.stellarkeyboard
 
 import android.graphics.Color
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
 import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
-import android.view.inputmethod.EditorInfo
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.view.inputmethod.EditorInfo
 
 class StellarInputMethod : InputMethodService() {
 
     private lateinit var keyboard: LinearLayout
-    private var shifted = false
-    private var symbols = false
 
-    private val backgroundColor = Color.rgb(24, 28, 40)
-    private val keyColor = Color.rgb(53, 60, 80)
-    private val accentColor = Color.rgb(105, 160, 255)
+    private lateinit var suggestionView: StellarSuggestionView
+
+    private lateinit var suggestionContainer: LinearLayout
+
+    private val state = StellarKeyboardState()
+
+    private val suggestionEngine = SuggestionEngine()
+
+    private val textProcessor = StellarTextProcessor()
+
+    private lateinit var preferences: StellarPreferences
+
+    override fun onCreate() {
+        super.onCreate()
+
+        preferences = StellarPreferences(this)
+
+        KeyboardLayout.currentType =
+            preferences.getLayout()
+
+        StellarTheme.mode =
+            if (preferences.isDarkTheme()) {
+                StellarTheme.Mode.DARK
+            } else {
+                StellarTheme.Mode.LIGHT
+            }
+
+        StellarTheme.accentColor =
+            preferences.getAccentColor()
+    }
 
     override fun onCreateInputView(): View {
         keyboard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(8), dp(4), dp(8))
-            setBackgroundColor(backgroundColor)
+            gravity = Gravity.CENTER
+            setPadding(
+                dp(5),
+                dp(7),
+                dp(5),
+                dp(7)
+            )
+            setBackgroundColor(
+                StellarTheme.backgroundColor
+            )
         }
 
+        createSuggestionBar()
         renderKeyboard()
+
         return keyboard
     }
 
+    private fun createSuggestionBar() {
+        suggestionView = StellarSuggestionView { word ->
+            replaceCurrentWord(word)
+        }
+
+        suggestionContainer =
+            suggestionView.create(this)
+
+        keyboard.addView(
+            suggestionContainer,
+            LinearLayout.LayoutParams(
+                -1,
+                dp(42)
+            )
+        )
+    }
+
     private fun renderKeyboard() {
-        keyboard.removeAllViews()
+        if (!::keyboard.isInitialized) return
 
-        addSuggestionRow()
+        while (keyboard.childCount > 1) {
+            keyboard.removeViewAt(1)
+        }
 
-        if (symbols) {
+        addLayoutRow()
+
+        if (state.symbols) {
             addRow(
-                listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+                listOf(
+                    "1", "2", "3", "4", "5",
+                    "6", "7", "8", "9", "0"
+                )
             )
+
             addRow(
-                listOf("@", "#", "$", "%", "&", "-", "+", "(", ")", "/")
+                listOf(
+                    "@", "#", "₺", "%", "&",
+                    "-", "+", "(", ")", "/"
+                )
             )
+
             addRow(
-                listOf("*", "\"", "'", ":", ";", "!", "?", "₺")
+                listOf(
+                    "*", "\"", "'", ":",
+                    ";", "!", "?", "=", "_"
+                )
             )
         } else {
             addRow(
-                listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+                listOf(
+                    "1", "2", "3", "4", "5",
+                    "6", "7", "8", "9", "0"
+                )
             )
 
             KeyboardLayout.rows().forEachIndexed { index, row ->
-                val keys = if (index == 2) {
-                    listOf("⇧") + row + listOf("⌫")
-                } else {
-                    row
+
+                val keys = when (index) {
+                    0 -> row
+
+                    1 -> row
+
+                    else -> listOf(
+                        if (state.shifted) "⇧" else "⇧"
+                    ) + row + listOf("⌫")
                 }
 
                 addRow(keys)
@@ -65,50 +136,68 @@ class StellarInputMethod : InputMethodService() {
         }
 
         addBottomRow()
+
+        updateSuggestions()
     }
 
-    private fun addSuggestionRow() {
+    private fun addLayoutRow() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
 
-        val layoutButton = makeKey(
-            if (KeyboardLayout.currentType ==
+        val layoutName =
+            if (
+                KeyboardLayout.currentType ==
                 KeyboardLayout.Type.TURKISH_Q
-            ) "Q" else "F"
+            ) {
+                "Q"
+            } else {
+                "F"
+            }
+
+        val layoutButton = createKey(
+            layoutName,
+            1f
         ) {
             KeyboardLayout.toggle()
+
+            preferences.setLayout(
+                KeyboardLayout.currentType
+            )
+
             renderKeyboard()
         }
 
-        row.addView(
-            layoutButton,
-            LinearLayout.LayoutParams(0, dp(40), 1f)
-        )
+        row.addView(layoutButton)
 
         val title = TextView(this).apply {
-            text = "Stellar"
+            text = "Stellar Klavye"
             textSize = 14f
             gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(
+                StellarTheme.secondaryTextColor
+            )
         }
 
         row.addView(
             title,
-            LinearLayout.LayoutParams(0, dp(40), 4f)
+            LinearLayout.LayoutParams(
+                0,
+                dp(40),
+                4f
+            )
         )
 
-        val symbolButton = makeKey("123") {
-            symbols = !symbols
+        val symbolButton = createKey(
+            "123",
+            1f
+        ) {
+            state.symbols = !state.symbols
             renderKeyboard()
         }
 
-        row.addView(
-            symbolButton,
-            LinearLayout.LayoutParams(0, dp(40), 1f)
-        )
+        row.addView(symbolButton)
 
         keyboard.addView(row)
     }
@@ -120,23 +209,23 @@ class StellarInputMethod : InputMethodService() {
         }
 
         keys.forEach { key ->
-            val button = makeKey(key) {
-                handleKey(key)
-            }
-
             row.addView(
-                button,
-                LinearLayout.LayoutParams(
-                    0,
-                    dp(48),
+                createKey(
+                    key,
                     1f
-                ).apply {
-                    setMargins(dp(2), dp(3), dp(2), dp(3))
+                ) {
+                    handleKey(key)
                 }
             )
         }
 
-        keyboard.addView(row)
+        keyboard.addView(
+            row,
+            LinearLayout.LayoutParams(
+                -1,
+                dp(51)
+            )
+        )
     }
 
     private fun addBottomRow() {
@@ -145,74 +234,76 @@ class StellarInputMethod : InputMethodService() {
             gravity = Gravity.CENTER
         }
 
-        fun add(
-            text: String,
-            weight: Float,
-            action: () -> Unit
-        ) {
-            row.addView(
-                makeKey(text, action),
-                LinearLayout.LayoutParams(
-                    0,
-                    dp(48),
-                    weight
-                ).apply {
-                    setMargins(dp(2), dp(3), dp(2), dp(3))
-                }
-            )
-        }
-
-        add("?123", 1f) {
-            symbols = !symbols
+        addBottomKey(row, "?123", 1f) {
+            state.symbols = !state.symbols
             renderKeyboard()
         }
 
-        add(",", 0.7f) {
+        addBottomKey(row, ",", 0.7f) {
             commit(",")
+            updateSuggestions()
         }
 
-        add("Türkçe", 4f) {
-            commit(" ")
+        addBottomKey(row, "Boşluk", 3.8f) {
+            commitWithCorrection(" ")
         }
 
-        add(".", 0.7f) {
+        addBottomKey(row, ".", 0.7f) {
             commit(".")
+            updateSuggestions()
         }
 
-        add("↵", 1.2f) {
+        addBottomKey(row, "↵", 1.2f) {
             handleEnter()
         }
 
-        keyboard.addView(row)
+        keyboard.addView(
+            row,
+            LinearLayout.LayoutParams(
+                -1,
+                dp(53)
+            )
+        )
     }
 
-    private fun makeKey(
+    private fun addBottomKey(
+        row: LinearLayout,
         text: String,
+        weight: Float,
         action: () -> Unit
-    ): Button {
-        return Button(this).apply {
-            this.text = text
-            textSize = 16f
-            isAllCaps = false
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
-            background = roundedBackground(
-                if (text == "↵" || text == "⇧") {
-                    accentColor
-                } else {
-                    keyColor
-                }
+    ) {
+        row.addView(
+            createKey(
+                text,
+                weight,
+                action
             )
+        )
+    }
 
-            setPadding(0, 0, 0, 0)
-            minWidth = 0
-            minimumWidth = 0
-            minHeight = 0
-            minimumHeight = 0
-            stateListAnimator = null
+    private fun createKey(
+        text: String,
+        weight: Float,
+        action: () -> Unit
+    ): View {
+        val key = StellarGlassKey(
+            this,
+            text,
+            action
+        )
 
-            setOnClickListener {
-                action()
+        return key.apply {
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                dp(48),
+                weight
+            ).apply {
+                setMargins(
+                    dp(2),
+                    dp(3),
+                    dp(2),
+                    dp(3)
+                )
             }
         }
     }
@@ -220,39 +311,144 @@ class StellarInputMethod : InputMethodService() {
     private fun handleKey(key: String) {
         when (key) {
             "⇧" -> {
-                shifted = !shifted
+                if (state.shifted) {
+                    state.enableCapsLock()
+                } else {
+                    state.toggleShift()
+                }
+
                 renderKeyboard()
             }
 
             "⌫" -> {
-                val connection = currentInputConnection
-                connection?.deleteSurroundingText(1, 0)
+                currentInputConnection
+                    ?.deleteSurroundingText(1, 0)
+
+                updateSuggestions()
             }
 
             else -> {
-                val output = if (shifted) {
-                    key.uppercase()
-                } else {
-                    key
-                }
+                val output =
+                    if (state.shifted || state.capsLock) {
+                        key.uppercase()
+                    } else {
+                        key
+                    }
 
                 commit(output)
 
-                if (shifted) {
-                    shifted = false
+                state.afterCharacterTyped()
+
+                updateSuggestions()
+
+                if (!state.capsLock) {
                     renderKeyboard()
                 }
             }
         }
     }
 
+    private fun commitWithCorrection(
+        separator: String
+    ) {
+        val connection = currentInputConnection
+            ?: return
+
+        val before = connection.getTextBeforeCursor(
+            100,
+            0
+        )?.toString() ?: ""
+
+        val corrected =
+            textProcessor.correctBeforeSpace(before)
+
+        if (corrected != null) {
+            val currentWord =
+                StellarWordExtractor.currentWord(before)
+
+            connection.deleteSurroundingText(
+                currentWord.length,
+                0
+            )
+
+            connection.commitText(
+                corrected,
+                1
+            )
+        }
+
+        connection.commitText(
+            separator,
+            1
+        )
+
+        updateSuggestions()
+    }
+
+    private fun replaceCurrentWord(
+        replacement: String
+    ) {
+        val connection = currentInputConnection
+            ?: return
+
+        val before = connection.getTextBeforeCursor(
+            100,
+            0
+        )?.toString() ?: ""
+
+        val currentWord =
+            StellarWordExtractor.currentWord(before)
+
+        if (currentWord.isEmpty()) {
+            return
+        }
+
+        connection.deleteSurroundingText(
+            currentWord.length,
+            0
+        )
+
+        connection.commitText(
+            replacement,
+            1
+        )
+
+        updateSuggestions()
+    }
+
+    private fun updateSuggestions() {
+        if (!::suggestionView.isInitialized) {
+            return
+        }
+
+        val before =
+            currentInputConnection
+                ?.getTextBeforeCursor(100, 0)
+                ?.toString()
+                ?: ""
+
+        val currentWord =
+            StellarWordExtractor.currentWord(before)
+
+        val suggestions =
+            suggestionEngine.suggest(currentWord)
+
+        suggestionView.update(
+            this,
+            suggestions
+        )
+    }
+
     private fun handleEnter() {
-        val connection = currentInputConnection ?: return
+        val connection =
+            currentInputConnection ?: return
+
         val info = currentInputEditorInfo
 
-        val action = info?.imeOptions?.and(
-            EditorInfo.IME_MASK_ACTION
-        ) ?: EditorInfo.IME_ACTION_NONE
+        val action =
+            info?.imeOptions?.and(
+                EditorInfo.IME_MASK_ACTION
+            ) ?: EditorInfo.IME_ACTION_NONE
 
         when (action) {
             EditorInfo.IME_ACTION_GO,
@@ -264,22 +460,43 @@ class StellarInputMethod : InputMethodService() {
             }
 
             else -> {
-                connection.commitText("\n", 1)
+                connection.commitText(
+                    "\n",
+                    1
+                )
             }
         }
+
+        updateSuggestions()
     }
 
     private fun commit(text: String) {
-        currentInputConnection?.commitText(text, 1)
+        currentInputConnection?.commitText(
+            text,
+            1
+        )
     }
 
-    private fun roundedBackground(color: Int) =
-        GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = dp(12).toFloat()
+    override fun onStartInput(
+        attribute: EditorInfo?,
+        restarting: Boolean
+    ) {
+        super.onStartInput(
+            attribute,
+            restarting
+        )
+
+        state.reset()
+
+        if (::keyboard.isInitialized) {
+            renderKeyboard()
         }
+    }
 
     private fun dp(value: Int): Int {
-        return (value * resources.displayMetrics.density).toInt()
+        return (
+            value *
+                resources.displayMetrics.density
+            ).toInt()
     }
 }
