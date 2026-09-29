@@ -1,0 +1,41 @@
+.stellar-keyboard {
+    border-radius: 22px;
+    padding: 8px;
+}
+
+.stellar-surface {
+    border-radius: 22px;
+    padding: 8px;
+}
+
+.stellar-key {
+    border-radius: 14px;
+    padding: 8px;
+    margin: 2px;
+    min-width: 42px;
+    min-height: 42px;
+}
+
+.stellar-key:hover {
+    background-image: none;
+}
+
+.stellar-key:active {
+    background-image: none;
+}
+
+.stellar-toolbar {
+    border-radius: 16px;
+    padding: 5px;
+}
+
+.stellar-emoji {
+    border-radius: 12px;
+    padding: 4px;
+    font-size: 22px;
+}
+
+.stellar-clipboard {
+    border-radius: 12px;
+    padding: 8px;
+}
