@@ -4,6 +4,33 @@ import os
 
 class StellarPreferences:
 
+    DEFAULTS = {
+        "layout": "Q",
+
+        # İlk açılış artık yüzen klavye.
+        "keyboard_mode": "floating",
+
+        "theme": "dark",
+
+        "sound_enabled": True,
+        "sound_type": "soft",
+
+        "clipboard_enabled": True,
+        "clipboard_limit": 20,
+
+        "emoji_recent_enabled": True,
+
+        "floating_width": 520,
+        "floating_height": 300,
+
+        "floating_x": -1,
+        "floating_y": -1,
+
+        "one_hand_side": "right",
+
+        "language": "tr"
+    }
+
     def __init__(self):
         self.directory = os.path.expanduser(
             "~/.config/stellar-keyboard"
@@ -14,26 +41,18 @@ class StellarPreferences:
             "settings.json"
         )
 
-        self.defaults = {
-            "layout": "Q",
-            "theme": "dark",
-            "keyboard_mode": "full",
-            "language": "tr",
-            "sound": True,
-            "vibration": True
-        }
-
-        self.data = self.load()
-
-    def load(self):
         os.makedirs(
             self.directory,
             exist_ok=True
         )
 
+        self.data = self.load()
+
+    def load(self):
         if not os.path.exists(self.file):
-            self.save(self.defaults.copy())
-            return self.defaults.copy()
+            data = self.DEFAULTS.copy()
+            self.save(data)
+            return data
 
         try:
             with open(
@@ -41,27 +60,22 @@ class StellarPreferences:
                 "r",
                 encoding="utf-8"
             ) as file:
-                data = json.load(file)
+                loaded = json.load(file)
 
-            result = self.defaults.copy()
-            result.update(data)
+            data = self.DEFAULTS.copy()
+            data.update(loaded)
 
-            return result
+            return data
 
         except (
             OSError,
             json.JSONDecodeError
         ):
-            return self.defaults.copy()
+            return self.DEFAULTS.copy()
 
     def save(self, data=None):
         if data is not None:
             self.data = data
-
-        os.makedirs(
-            self.directory,
-            exist_ok=True
-        )
 
         with open(
             self.file,
@@ -78,7 +92,7 @@ class StellarPreferences:
     def get(self, key):
         return self.data.get(
             key,
-            self.defaults.get(key)
+            self.DEFAULTS.get(key)
         )
 
     def set(self, key, value):
@@ -104,3 +118,64 @@ class StellarPreferences:
             "keyboard_mode",
             mode
         )
+
+    def get_theme(self):
+        return self.get("theme")
+
+    def set_theme(self, theme):
+        self.set(
+            "theme",
+            theme
+        )
+
+    def sound_enabled(self):
+        return bool(
+            self.get("sound_enabled")
+        )
+
+    def set_sound_enabled(self, enabled):
+        self.set(
+            "sound_enabled",
+            bool(enabled)
+        )
+
+    def clipboard_enabled(self):
+        return bool(
+            self.get("clipboard_enabled")
+        )
+
+    def set_clipboard_enabled(self, enabled):
+        self.set(
+            "clipboard_enabled",
+            bool(enabled)
+        )
+
+    def get_floating_size(self):
+        return (
+            int(self.get("floating_width")),
+            int(self.get("floating_height"))
+        )
+
+    def set_floating_size(
+        self,
+        width,
+        height
+    ):
+        self.data["floating_width"] = int(width)
+        self.data["floating_height"] = int(height)
+        self.save()
+
+    def get_floating_position(self):
+        return (
+            int(self.get("floating_x")),
+            int(self.get("floating_y"))
+        )
+
+    def set_floating_position(
+        self,
+        x,
+        y
+    ):
+        self.data["floating_x"] = int(x)
+        self.data["floating_y"] = int(y)
+        self.save()
