@@ -4,228 +4,236 @@ import android.graphics.Color
 import android.inputmethodservice.InputMethodService
 import android.view.Gravity
 import android.view.View
-import android.widget.LinearLayout
-import android.widget.TextView
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.widget.LinearLayout
 
 class StellarInputMethod : InputMethodService() {
 
     private lateinit var keyboard: LinearLayout
 
-    private lateinit var suggestionView: StellarSuggestionView
+    private lateinit var modeManager: KeyboardModeManager
 
-    private lateinit var suggestionContainer: LinearLayout
+    private lateinit var emojiPanel: StellarEmojiPanel
 
     private val state = StellarKeyboardState()
 
-    private val suggestionEngine = SuggestionEngine()
-
-    private val textProcessor = StellarTextProcessor()
-
-    private lateinit var preferences: StellarPreferences
+    private var emojiMode = false
 
     override fun onCreate() {
         super.onCreate()
 
-        preferences = StellarPreferences(this)
+        modeManager = KeyboardModeManager(this)
 
         KeyboardLayout.currentType =
-            preferences.getLayout()
+            StellarPreferences(this).getLayout()
 
-        StellarTheme.mode =
-            if (preferences.isDarkTheme()) {
-                StellarTheme.Mode.DARK
-            } else {
-                StellarTheme.Mode.LIGHT
-            }
-
-        StellarTheme.accentColor =
-            preferences.getAccentColor()
+        applyKeyboardMode(
+            modeManager.getMode()
+        )
     }
 
     override fun onCreateInputView(): View {
         keyboard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(
-                dp(5),
-                dp(7),
-                dp(5),
-                dp(7)
-            )
             setBackgroundColor(
                 StellarTheme.backgroundColor
             )
         }
 
-        createSuggestionBar()
-        renderKeyboard()
+        render()
 
         return keyboard
     }
 
-    private fun createSuggestionBar() {
-        suggestionView = StellarSuggestionView { word ->
-            replaceCurrentWord(word)
-        }
+    private fun render() {
+        keyboard.removeAllViews()
 
-        suggestionContainer =
-            suggestionView.create(this)
-
-        keyboard.addView(
-            suggestionContainer,
-            LinearLayout.LayoutParams(
-                -1,
-                dp(42)
-            )
-        )
-    }
-
-    private fun renderKeyboard() {
-        if (!::keyboard.isInitialized) return
-
-        while (keyboard.childCount > 1) {
-            keyboard.removeViewAt(1)
-        }
-
-        addLayoutRow()
-
-        if (state.symbols) {
-            addRow(
-                listOf(
-                    "1", "2", "3", "4", "5",
-                    "6", "7", "8", "9", "0"
-                )
-            )
-
-            addRow(
-                listOf(
-                    "@", "#", "₺", "%", "&",
-                    "-", "+", "(", ")", "/"
-                )
-            )
-
-            addRow(
-                listOf(
-                    "*", "\"", "'", ":",
-                    ";", "!", "?", "=", "_"
-                )
-            )
-        } else {
-            addRow(
-                listOf(
-                    "1", "2", "3", "4", "5",
-                    "6", "7", "8", "9", "0"
-                )
-            )
-
-            KeyboardLayout.rows().forEachIndexed { index, row ->
-
-                val keys = when (index) {
-                    0 -> row
-
-                    1 -> row
-
-                    else -> listOf(
-                        if (state.shifted) "⇧" else "⇧"
-                    ) + row + listOf("⌫")
+        if (emojiMode) {
+            emojiPanel = StellarEmojiPanel(
+                this,
+                onEmojiSelected = { emoji ->
+                    currentInputConnection?.commitText(
+                        emoji,
+                        1
+                    )
+                },
+                onBackToKeyboard = {
+                    emojiMode = false
+                    render()
                 }
+            )
 
-                addRow(keys)
-            }
+            keyboard.addView(
+                emojiPanel.create(),
+                LinearLayout.LayoutParams(
+                    -1,
+                    -1
+                )
+            )
+
+            return
         }
 
-        addBottomRow()
-
-        updateSuggestions()
+        addTopBar()
+        addKeyboardRows()
     }
 
-    private fun addLayoutRow() {
+    private fun addTopBar() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
+            setPadding(
+                dp(4),
+                dp(4),
+                dp(4),
+                dp(4)
+            )
         }
 
-        val layoutName =
-            if (
-                KeyboardLayout.currentType ==
-                KeyboardLayout.Type.TURKISH_Q
-            ) {
-                "Q"
-            } else {
-                "F"
+        val modeButton = KeyboardModeButton(
+            this,
+            modeManager
+        ) { mode ->
+            applyKeyboardMode(mode)
+            render()
+        }
+
+        row.addView(
+            modeButton,
+            LinearLayout.LayoutParams(
+                dp(50),
+                dp(42)
+            )
+        )
+
+        val emojiButton =
+            android.widget.Button(this).apply {
+                text = "😊"
+                textSize = 20f
+                isAllCaps = false
+
+                setOnClickListener {
+                    emojiMode = true
+                    render()
+                }
             }
 
-        val layoutButton = createKey(
-            layoutName,
-            1f
-        ) {
-            KeyboardLayout.toggle()
-
-            preferences.setLayout(
-                KeyboardLayout.currentType
+        row.addView(
+            emojiButton,
+            LinearLayout.LayoutParams(
+                dp(50),
+                dp(42)
             )
+        )
 
-            renderKeyboard()
-        }
+        val layoutButton =
+            android.widget.Button(this).apply {
+                text =
+                    if (
+                        KeyboardLayout.currentType ==
+                        KeyboardLayout.Type.TURKISH_Q
+                    ) {
+                        "Q"
+                    } else {
+                        "F"
+                    }
 
-        row.addView(layoutButton)
+                isAllCaps = false
 
-        val title = TextView(this).apply {
-            text = "Stellar Klavye"
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setTextColor(
-                StellarTheme.secondaryTextColor
+                setOnClickListener {
+                    KeyboardLayout.toggle()
+
+                    StellarPreferences(this@StellarInputMethod)
+                        .setLayout(
+                            KeyboardLayout.currentType
+                        )
+
+                    render()
+                }
+            }
+
+        row.addView(
+            layoutButton,
+            LinearLayout.LayoutParams(
+                dp(50),
+                dp(42)
             )
-        }
+        )
+
+        val title =
+            android.widget.TextView(this).apply {
+                text = "Stellar"
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setTextColor(
+                    StellarTheme.textColor
+                )
+            }
 
         row.addView(
             title,
             LinearLayout.LayoutParams(
                 0,
-                dp(40),
-                4f
+                dp(42),
+                1f
             )
         )
-
-        val symbolButton = createKey(
-            "123",
-            1f
-        ) {
-            state.symbols = !state.symbols
-            renderKeyboard()
-        }
-
-        row.addView(symbolButton)
-
-        keyboard.addView(row)
-    }
-
-    private fun addRow(keys: List<String>) {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
-
-        keys.forEach { key ->
-            row.addView(
-                createKey(
-                    key,
-                    1f
-                ) {
-                    handleKey(key)
-                }
-            )
-        }
 
         keyboard.addView(
             row,
             LinearLayout.LayoutParams(
                 -1,
-                dp(51)
+                dp(48)
             )
         )
+    }
+
+    private fun addKeyboardRows() {
+        KeyboardLayout.rows().forEach { row ->
+            val layoutRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+            }
+
+            row.forEach { key ->
+                val button = StellarGlassKey(
+                    this,
+                    key
+                ) {
+                    commit(
+                        key
+                    )
+                }
+
+                layoutRow.addView(
+                    button,
+                    LinearLayout.LayoutParams(
+                        0,
+                        dp(50),
+                        1f
+                    ).apply {
+                        setMargins(
+                            dp(2),
+                            dp(3),
+                            dp(2),
+                            dp(3)
+                        )
+                    }
+                )
+            }
+
+            keyboard.addView(
+                layoutRow,
+                LinearLayout.LayoutParams(
+                    keyboardWidth(),
+                    dp(56)
+                )
+            )
+        }
+
+        addBottomRow()
     }
 
     private fun addBottomRow() {
@@ -234,68 +242,81 @@ class StellarInputMethod : InputMethodService() {
             gravity = Gravity.CENTER
         }
 
-        addBottomKey(row, "?123", 1f) {
-            state.symbols = !state.symbols
-            renderKeyboard()
+        addBottomButton(
+            row,
+            "⇧",
+            1f
+        ) {
+            state.toggleShift()
         }
 
-        addBottomKey(row, ",", 0.7f) {
+        addBottomButton(
+            row,
+            "⌫",
+            1f
+        ) {
+            currentInputConnection
+                ?.deleteSurroundingText(1, 0)
+        }
+
+        addBottomButton(
+            row,
+            ",",
+            0.8f
+        ) {
             commit(",")
-            updateSuggestions()
         }
 
-        addBottomKey(row, "Boşluk", 3.8f) {
-            commitWithCorrection(" ")
+        addBottomButton(
+            row,
+            "Boşluk",
+            4f
+        ) {
+            commit(" ")
         }
 
-        addBottomKey(row, ".", 0.7f) {
+        addBottomButton(
+            row,
+            ".",
+            0.8f
+        ) {
             commit(".")
-            updateSuggestions()
         }
 
-        addBottomKey(row, "↵", 1.2f) {
+        addBottomButton(
+            row,
+            "↵",
+            1.2f
+        ) {
             handleEnter()
         }
 
         keyboard.addView(
             row,
             LinearLayout.LayoutParams(
-                -1,
-                dp(53)
+                keyboardWidth(),
+                dp(56)
             )
         )
     }
 
-    private fun addBottomKey(
+    private fun addBottomButton(
         row: LinearLayout,
         text: String,
         weight: Float,
         action: () -> Unit
     ) {
-        row.addView(
-            createKey(
-                text,
-                weight,
-                action
-            )
-        )
-    }
-
-    private fun createKey(
-        text: String,
-        weight: Float,
-        action: () -> Unit
-    ): View {
-        val key = StellarGlassKey(
+        val button = StellarGlassKey(
             this,
             text,
             action
         )
 
-        return key.apply {
-            layoutParams = LinearLayout.LayoutParams(
+        row.addView(
+            button,
+            LinearLayout.LayoutParams(
                 0,
-                dp(48),
+                dp(50),
                 weight
             ).apply {
                 setMargins(
@@ -305,176 +326,113 @@ class StellarInputMethod : InputMethodService() {
                     dp(3)
                 )
             }
-        }
+        )
     }
 
-    private fun handleKey(key: String) {
-        when (key) {
-            "⇧" -> {
-                if (state.shifted) {
-                    state.enableCapsLock()
-                } else {
-                    state.toggleShift()
-                }
-
-                renderKeyboard()
+    private fun commit(text: String) {
+        val output =
+            if (
+                state.shifted ||
+                state.capsLock
+            ) {
+                text.uppercase()
+            } else {
+                text
             }
 
-            "⌫" -> {
-                currentInputConnection
-                    ?.deleteSurroundingText(1, 0)
-
-                updateSuggestions()
-            }
-
-            else -> {
-                val output =
-                    if (state.shifted || state.capsLock) {
-                        key.uppercase()
-                    } else {
-                        key
-                    }
-
-                commit(output)
-
-                state.afterCharacterTyped()
-
-                updateSuggestions()
-
-                if (!state.capsLock) {
-                    renderKeyboard()
-                }
-            }
-        }
-    }
-
-    private fun commitWithCorrection(
-        separator: String
-    ) {
-        val connection = currentInputConnection
-            ?: return
-
-        val before = connection.getTextBeforeCursor(
-            100,
-            0
-        )?.toString() ?: ""
-
-        val corrected =
-            textProcessor.correctBeforeSpace(before)
-
-        if (corrected != null) {
-            val currentWord =
-                StellarWordExtractor.currentWord(before)
-
-            connection.deleteSurroundingText(
-                currentWord.length,
-                0
-            )
-
-            connection.commitText(
-                corrected,
-                1
-            )
-        }
-
-        connection.commitText(
-            separator,
+        currentInputConnection?.commitText(
+            output,
             1
         )
 
-        updateSuggestions()
-    }
-
-    private fun replaceCurrentWord(
-        replacement: String
-    ) {
-        val connection = currentInputConnection
-            ?: return
-
-        val before = connection.getTextBeforeCursor(
-            100,
-            0
-        )?.toString() ?: ""
-
-        val currentWord =
-            StellarWordExtractor.currentWord(before)
-
-        if (currentWord.isEmpty()) {
-            return
-        }
-
-        connection.deleteSurroundingText(
-            currentWord.length,
-            0
-        )
-
-        connection.commitText(
-            replacement,
-            1
-        )
-
-        updateSuggestions()
-    }
-
-    private fun updateSuggestions() {
-        if (!::suggestionView.isInitialized) {
-            return
-        }
-
-        val before =
-            currentInputConnection
-                ?.getTextBeforeCursor(100, 0)
-                ?.toString()
-                ?: ""
-
-        val currentWord =
-            StellarWordExtractor.currentWord(before)
-
-        val suggestions =
-            suggestionEngine.suggest(currentWord)
-
-        suggestionView.update(
-            this,
-            suggestions
-        )
+        state.afterCharacterTyped()
     }
 
     private fun handleEnter() {
         val connection =
             currentInputConnection ?: return
 
-        val info = currentInputEditorInfo
-
         val action =
-            info?.imeOptions?.and(
-                EditorInfo.IME_MASK_ACTION
-            ) ?: EditorInfo.IME_ACTION_NONE
-
-        when (action) {
-            EditorInfo.IME_ACTION_GO,
-            EditorInfo.IME_ACTION_SEARCH,
-            EditorInfo.IME_ACTION_SEND,
-            EditorInfo.IME_ACTION_NEXT,
-            EditorInfo.IME_ACTION_DONE -> {
-                connection.performEditorAction(action)
-            }
-
-            else -> {
-                connection.commitText(
-                    "\n",
-                    1
+            currentInputEditorInfo
+                ?.imeOptions
+                ?.and(
+                    EditorInfo.IME_MASK_ACTION
                 )
-            }
-        }
+                ?: EditorInfo.IME_ACTION_NONE
 
-        updateSuggestions()
+        if (action != EditorInfo.IME_ACTION_NONE) {
+            connection.performEditorAction(action)
+        } else {
+            connection.commitText(
+                "\n",
+                1
+            )
+        }
     }
 
-    private fun commit(text: String) {
-        currentInputConnection?.commitText(
-            text,
-            1
-        )
+    private fun applyKeyboardMode(
+        mode: KeyboardMode
+    ) {
+        val window = window.window ?: return
+
+        when (mode) {
+            KeyboardMode.FULL -> {
+                window.setLayout(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.WRAP_CONTENT
+                )
+            }
+
+            KeyboardMode.ONE_HANDED_LEFT,
+            KeyboardMode.ONE_HANDED_RIGHT -> {
+                window.setLayout(
+                    dp(340),
+                    WindowManager.LayoutParams.WRAP_CONTENT
+                )
+
+                window.attributes =
+                    window.attributes.apply {
+                        gravity =
+                            if (
+                                mode ==
+                                KeyboardMode.ONE_HANDED_LEFT
+                            ) {
+                                Gravity.BOTTOM or
+                                    Gravity.START
+                            } else {
+                                Gravity.BOTTOM or
+                                    Gravity.END
+                            }
+                    }
+            }
+
+            KeyboardMode.FLOATING -> {
+                window.setLayout(
+                    dp(360),
+                    dp(300)
+                )
+
+                window.attributes =
+                    window.attributes.apply {
+                        gravity =
+                            Gravity.CENTER
+                    }
+            }
+        }
+    }
+
+    private fun keyboardWidth(): Int {
+        return when (modeManager.getMode()) {
+            KeyboardMode.FULL ->
+                WindowManager.LayoutParams.MATCH_PARENT
+
+            KeyboardMode.ONE_HANDED_LEFT,
+            KeyboardMode.ONE_HANDED_RIGHT ->
+                dp(340)
+
+            KeyboardMode.FLOATING ->
+                dp(360)
+        }
     }
 
     override fun onStartInput(
@@ -487,10 +445,7 @@ class StellarInputMethod : InputMethodService() {
         )
 
         state.reset()
-
-        if (::keyboard.isInitialized) {
-            renderKeyboard()
-        }
+        emojiMode = false
     }
 
     private fun dp(value: Int): Int {
