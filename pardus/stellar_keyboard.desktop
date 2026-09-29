@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Stellar Keyboard
+Comment=Stellar Keyboard Pardus Edition
+Exec=python3 %k/stellar_app.py
+Terminal=false
+Categories=Utility;
+StartupNotify=false
